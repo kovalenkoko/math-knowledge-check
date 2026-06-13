@@ -1,20 +1,13 @@
-import { Button, Card } from '@/shared/ui'
+import { Link } from 'react-router-dom'
 
-const featureCards = [
+import { routes } from '@/shared/config/routes'
+
+const lessons = [
   {
-    title: 'Adaptive checks',
+    title: 'Линейная функция',
     description:
-      'Build short knowledge checks that can evolve from simple quizzes into adaptive practice flows.',
-  },
-  {
-    title: 'Clean architecture',
-    description:
-      'Keep pages, app providers, shared UI, and future features isolated from the start.',
-  },
-  {
-    title: 'Quality baseline',
-    description:
-      'Ship with TypeScript, linting, formatting, and production builds already wired in.',
+      'Теория, задания и интерактивные тренажеры по формуле y = kx + b.',
+    href: routes.linearFunctionLesson,
   },
 ] as const
 
@@ -26,32 +19,38 @@ export function HomePage() {
         aria-labelledby="home-title"
       >
         <p className="w-fit rounded-full bg-blue-100 px-3 py-2 text-sm font-bold tracking-[0.08em] text-blue-700 uppercase">
-          Math Knowledge Check
+          Уроки математики
         </p>
         <h1
           id="home-title"
           className="text-[clamp(2.5rem,8vw,5rem)] leading-[0.95] font-bold tracking-[-0.06em] text-slate-950"
         >
-          A modern foundation for math assessment flows.
+          Интерактивные материалы и задания.
         </h1>
         <p className="max-w-2xl text-lg text-slate-600">
-          Start from a small React application that is ready for routing,
-          reusable UI, Tailwind components, and future feature modules.
+          Выбирай урок, разбирай теорию по блокам и сразу проверяй себя в
+          коротких упражнениях.
         </p>
-        <div className="flex flex-wrap gap-3" aria-label="Primary actions">
-          <Button>Start building</Button>
-          <Button variant="secondary">Review structure</Button>
-        </div>
       </section>
 
       <section
-        className="grid grid-cols-1 gap-4 md:grid-cols-3"
-        aria-label="Application foundation"
+        className="grid grid-cols-1 gap-4 md:grid-cols-2"
+        aria-label="Доступные уроки"
       >
-        {featureCards.map((feature) => (
-          <Card key={feature.title} title={feature.title}>
-            {feature.description}
-          </Card>
+        {lessons.map((lesson) => (
+          <Link
+            key={lesson.title}
+            className="group grid gap-4 rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_18px_50px_rgb(15_23_42_/_8%)] transition hover:-translate-y-1 hover:border-blue-300 focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-blue-100"
+            to={lesson.href}
+          >
+            <span className="text-sm font-bold tracking-[0.08em] text-blue-700 uppercase">
+              Урок
+            </span>
+            <h2 className="text-2xl font-bold text-slate-950 group-hover:text-blue-700">
+              {lesson.title}
+            </h2>
+            <p className="text-slate-600">{lesson.description}</p>
+          </Link>
         ))}
       </section>
     </main>
