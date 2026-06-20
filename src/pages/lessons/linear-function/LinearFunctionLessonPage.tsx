@@ -1,4 +1,10 @@
-import { type MouseEvent, type ReactNode, useMemo, useState } from 'react'
+import {
+  type DragEvent,
+  type MouseEvent,
+  type ReactNode,
+  useMemo,
+  useState,
+} from 'react'
 import { Link } from 'react-router-dom'
 
 import { routes } from '@/shared/config/routes'
@@ -7,27 +13,46 @@ import { Button } from '@/shared/ui'
 
 type QuizOption = {
   readonly id: string
-  readonly label: string
+  readonly label: ReactNode
   readonly isCorrect: boolean
   readonly explanation?: string
 }
 
 type MatchingChoice = {
   readonly id: string
-  readonly label: string
+  readonly label: ReactNode
 }
 
 type MatchingSituation = {
   readonly id: string
-  readonly text: string
+  readonly text: ReactNode
   readonly correctChoiceId: string
 }
 
 type TrainerTask = {
   readonly id: string
-  readonly formula: string
+  readonly formula: ReactNode
   readonly k: number
   readonly b: number
+}
+
+type CatchPoint = Point & {
+  readonly id: string
+  readonly label: string
+  readonly isCorrect: boolean
+}
+
+type PointCatchTask = TrainerTask & {
+  readonly points: readonly CatchPoint[]
+}
+
+type ParallelLinesTask = {
+  readonly id: string
+  readonly fixedK: number
+  readonly fixedB: number
+  readonly targetPoint: Point
+  readonly initialK: number
+  readonly initialB: number
 }
 
 type Point = {
@@ -35,14 +60,34 @@ type Point = {
   readonly y: number
 }
 
+type SortingColumn = 'linear' | 'other'
+type SortingLocation = SortingColumn | 'pool'
+
 const linearExamples = [
-  { formula: 'y = 3x + 5', k: '3', b: '5' },
-  { formula: 'y = 2x − 3', k: '2', b: '−3' },
-  { formula: 'y = −2x − 7', k: '−2', b: '−7' },
-  { formula: 'y = 2x', k: '2', b: '0' },
-  { formula: 'y = −3', k: '0', b: '−3' },
-  { formula: 'y = (6x − 4) / 2', k: '6 / 2 = 3', b: '−4 / 2 = −2' },
-  { formula: 'y = 5 − 3x', k: '−3', b: '5' },
+  { id: '3x-plus-5', formula: 'y = 3x + 5', k: '3', b: '5' },
+  { id: '2x-minus-3', formula: 'y = 2x − 3', k: '2', b: '−3' },
+  { id: 'minus-2x-minus-7', formula: 'y = −2x − 7', k: '−2', b: '−7' },
+  { id: '2x', formula: 'y = 2x', k: '2', b: '0' },
+  { id: 'minus-3', formula: 'y = −3', k: '0', b: '−3' },
+  {
+    id: 'fraction-expression',
+    formula: (
+      <>
+        y = <Fraction numerator="6x − 4" denominator="2" />
+      </>
+    ),
+    k: (
+      <>
+        <Fraction numerator="6" denominator="2" /> = 3
+      </>
+    ),
+    b: (
+      <>
+        <Fraction numerator="−4" denominator="2" /> = −2
+      </>
+    ),
+  },
+  { id: '5-minus-3x', formula: 'y = 5 − 3x', k: '−3', b: '5' },
 ] as const
 
 const nonLinearQuizOptions: readonly QuizOption[] = [
@@ -55,10 +100,22 @@ const nonLinearQuizOptions: readonly QuizOption[] = [
     explanation:
       'В формуле линейной функции x должен быть только в первой степени, а деление допустимо только на число.',
   },
-  { id: 'fraction-coefficient', label: 'y = ⅓x', isCorrect: false },
+  {
+    id: 'fraction-coefficient',
+    label: (
+      <>
+        y = <Fraction numerator="1" denominator="3" />x
+      </>
+    ),
+    isCorrect: false,
+  },
   {
     id: 'division-by-x',
-    label: 'y = 3 / x',
+    label: (
+      <>
+        y = <Fraction numerator="3" denominator="x" />
+      </>
+    ),
     isCorrect: true,
     explanation:
       'В формуле линейной функции x должен быть только в первой степени, а деление допустимо только на число.',
@@ -103,13 +160,21 @@ const sortingOptions: readonly QuizOption[] = [
   },
   {
     id: 'x-over-5',
-    label: 'y = x / 5',
+    label: (
+      <>
+        y = <Fraction numerator="x" denominator="5" />
+      </>
+    ),
     isCorrect: true,
-    explanation: 'Да, это ⅕x, где k = 0.2, b = 0.',
+    explanation: 'Да, это дробный коэффициент, где k = 0.2, b = 0.',
   },
   {
     id: 'five-over-x',
-    label: 'y = 5 / x',
+    label: (
+      <>
+        y = <Fraction numerator="5" denominator="x" />
+      </>
+    ),
     isCorrect: false,
     explanation: 'Нет, делиться на x в линейной функции нельзя.',
   },
@@ -134,7 +199,12 @@ const matchingSituations: readonly MatchingSituation[] = [
   },
   {
     id: 'snail',
-    text: 'Улитка ползет по вертикальной стене со скоростью 0.2 метра в минуту.',
+    text: (
+      <>
+        Улитка ползет по вертикальной стене со скоростью{' '}
+        <Fraction numerator="1" denominator="5" /> метра в минуту.
+      </>
+    ),
     correctChoiceId: 'positive-fraction',
   },
 ] as const
@@ -142,15 +212,20 @@ const matchingSituations: readonly MatchingSituation[] = [
 const matchingChoices: readonly MatchingChoice[] = [
   {
     id: 'negative',
-    label: 'А) k < 0: процесс убывает. Функция: y = −10x + 120',
+    label: 'k < 0: процесс убывает. Функция: y = −10x + 120',
   },
   {
     id: 'positive-fraction',
-    label: 'Б) k > 0 и дробный: медленный рост. Функция: y = 0.2x',
+    label: (
+      <>
+        k &gt; 0 и дробный: медленный рост. Функция: y ={' '}
+        <Fraction numerator="1" denominator="5" />x
+      </>
+    ),
   },
   {
     id: 'positive-fast',
-    label: 'В) k > 0: процесс увеличивается. Функция: y = 50x + 500',
+    label: 'k > 0: процесс увеличивается. Функция: y = 50x + 500',
   },
 ] as const
 
@@ -187,7 +262,11 @@ const bCoefficientTasks = [
   },
   {
     id: 'c',
-    equation: 'В) y = 0.5x',
+    equation: (
+      <>
+        В) y = <Fraction numerator="1" denominator="2" />x
+      </>
+    ),
     expected: ['0', '(0;0)'],
     answer: 'b = 0, точка (0; 0)',
   },
@@ -227,8 +306,143 @@ const propertiesQuizOptions: readonly QuizOption[] = [
 const trainerTasks: readonly TrainerTask[] = [
   { id: 'two-minus-three', formula: 'y = 2x − 3', k: 2, b: -3 },
   { id: 'minus-x-plus-four', formula: 'y = −x + 4', k: -1, b: 4 },
-  { id: 'half-x-plus-one', formula: 'y = 0.5x + 1', k: 0.5, b: 1 },
-  { id: 'minus-third-x-minus-two', formula: 'y = −⅓x − 2', k: -1 / 3, b: -2 },
+  {
+    id: 'half-x-plus-one',
+    formula: (
+      <>
+        y = <Fraction numerator="1" denominator="2" />x + 1
+      </>
+    ),
+    k: 0.5,
+    b: 1,
+  },
+  {
+    id: 'minus-third-x-minus-two',
+    formula: (
+      <>
+        y = −<Fraction numerator="1" denominator="3" />x − 2
+      </>
+    ),
+    k: -1 / 3,
+    b: -2,
+  },
+] as const
+
+const pointCatchTasks: readonly PointCatchTask[] = [
+  {
+    id: 'catch-two-minus-three',
+    formula: 'y = 2x − 3',
+    k: 2,
+    b: -3,
+    points: [
+      { id: 'a', label: 'A', x: 0, y: -3, isCorrect: true },
+      { id: 'b', label: 'B', x: 2, y: 1, isCorrect: true },
+      { id: 'c', label: 'C', x: -1, y: -5, isCorrect: true },
+      { id: 'd', label: 'D', x: 3, y: 5, isCorrect: false },
+      { id: 'e', label: 'E', x: 1, y: 0, isCorrect: false },
+    ],
+  },
+  {
+    id: 'catch-minus-x-plus-five',
+    formula: 'y = −x + 5',
+    k: -1,
+    b: 5,
+    points: [
+      { id: 'a', label: 'A', x: 1, y: 4, isCorrect: true },
+      { id: 'b', label: 'B', x: 5, y: 0, isCorrect: true },
+      { id: 'c', label: 'C', x: -2, y: 7, isCorrect: true },
+      { id: 'd', label: 'D', x: 0, y: 3, isCorrect: false },
+      { id: 'e', label: 'E', x: 3, y: 1, isCorrect: false },
+    ],
+  },
+  {
+    id: 'catch-three-x-plus-one',
+    formula: 'y = 3x + 1',
+    k: 3,
+    b: 1,
+    points: [
+      { id: 'a', label: 'A', x: 0, y: 1, isCorrect: true },
+      { id: 'b', label: 'B', x: 1, y: 4, isCorrect: true },
+      { id: 'c', label: 'C', x: -1, y: -2, isCorrect: true },
+      { id: 'd', label: 'D', x: 2, y: 6, isCorrect: false },
+      { id: 'e', label: 'E', x: -2, y: -4, isCorrect: false },
+    ],
+  },
+  {
+    id: 'catch-minus-two-x-plus-four',
+    formula: 'y = −2x + 4',
+    k: -2,
+    b: 4,
+    points: [
+      { id: 'a', label: 'A', x: 0, y: 4, isCorrect: true },
+      { id: 'b', label: 'B', x: 2, y: 0, isCorrect: true },
+      { id: 'c', label: 'C', x: 3, y: -2, isCorrect: true },
+      { id: 'd', label: 'D', x: 1, y: 3, isCorrect: false },
+      { id: 'e', label: 'E', x: -1, y: 5, isCorrect: false },
+    ],
+  },
+  {
+    id: 'catch-x-minus-four',
+    formula: 'y = x − 4',
+    k: 1,
+    b: -4,
+    points: [
+      { id: 'a', label: 'A', x: 4, y: 0, isCorrect: true },
+      { id: 'b', label: 'B', x: 0, y: -4, isCorrect: true },
+      { id: 'c', label: 'C', x: 5, y: 1, isCorrect: true },
+      { id: 'd', label: 'D', x: 2, y: 2, isCorrect: false },
+      { id: 'e', label: 'E', x: -1, y: -3, isCorrect: false },
+    ],
+  },
+] as const
+
+const parallelLinesTasks: readonly ParallelLinesTask[] = [
+  {
+    id: 'parallel-two-x',
+    fixedK: 2,
+    fixedB: 3,
+    targetPoint: { x: 0, y: 4 },
+    initialK: 1,
+    initialB: 0,
+  },
+  {
+    id: 'parallel-minus-four-x',
+    fixedK: -4,
+    fixedB: 1,
+    targetPoint: { x: 0, y: -2 },
+    initialK: -2,
+    initialB: 1,
+  },
+  {
+    id: 'parallel-half-x',
+    fixedK: 0.5,
+    fixedB: -6,
+    targetPoint: { x: 0, y: 3 },
+    initialK: 1.5,
+    initialB: -1,
+  },
+  {
+    id: 'parallel-five-x',
+    fixedK: 5,
+    fixedB: 0,
+    targetPoint: { x: 0, y: -7 },
+    initialK: 3,
+    initialB: 0,
+  },
+  {
+    id: 'parallel-constant',
+    fixedK: 0,
+    fixedB: -3,
+    targetPoint: { x: 0, y: 6 },
+    initialK: 1,
+    initialB: 2,
+  },
+] as const
+
+const additionalExercises = [
+  { href: 'https://learningapps.org/display?v=pcs4dm2dc26' },
+  { href: 'https://learningapps.org/display?v=pf5aemoba26' },
+  { href: 'https://learningapps.org/display?v=puzh444yt26' },
 ] as const
 
 const axisRange = 10
@@ -320,7 +534,7 @@ export function LinearFunctionLessonPage() {
                 </thead>
                 <tbody>
                   {linearExamples.map((example) => (
-                    <tr key={example.formula} className="even:bg-slate-50">
+                    <tr key={example.id} className="even:bg-slate-50">
                       <td className="border border-slate-200 px-4 py-3 font-semibold text-slate-900">
                         {example.formula}
                       </td>
@@ -340,10 +554,9 @@ export function LinearFunctionLessonPage() {
 
         <Section title="Задания: узнаем линейную функцию">
           <div className="grid gap-5 lg:grid-cols-2">
-            <SingleChoiceQuiz
+            <MultiSelectQuiz
               title="Какая функция НЕ является линейной?"
               options={nonLinearQuizOptions}
-              alertMessage="В формуле линейной функции x должен быть только в первой степени, а деление только на число! Попробуй еще раз."
             />
             {coefficientQuizzes.map((quiz) => (
               <SingleChoiceQuiz
@@ -353,10 +566,7 @@ export function LinearFunctionLessonPage() {
               />
             ))}
           </div>
-          <MultiSelectQuiz
-            title="Помоги роботу отсортировать функции. Какие из них являются линейными?"
-            options={sortingOptions}
-          />
+          <FunctionSortingExercise />
         </Section>
 
         <Section title="Теория: что показывает k">
@@ -370,7 +580,9 @@ export function LinearFunctionLessonPage() {
               уменьшается по формуле y = −15x + 200.
             </InfoCard>
             <InfoCard title="Дробный k">
-              График пологий, изменения идут медленно: например, y = 0.5x.
+              График пологий, изменения идут медленно: например, y ={' '}
+              <Fraction numerator="1" denominator="2" />
+              x.
             </InfoCard>
           </div>
           <MatchingExercise />
@@ -396,26 +608,264 @@ export function LinearFunctionLessonPage() {
         <Section title="Свойства линейной функции">
           <div className="grid gap-5 text-slate-700">
             <InfoCard title="Почему достаточно двух точек?">
-              Через любые две точки на плоскости можно провести прямую, и притом
-              только одну. Поэтому не нужно считать таблицу из 10 значений:
-              достаточно найти две удобные точки и провести прямую.
+              <div className="grid gap-4">
+                <p>
+                  Графиком линейной функции всегда является{' '}
+                  <strong className="font-black text-slate-950">
+                    прямая линия
+                  </strong>
+                  .
+                </p>
+                <p>
+                  Вспомни геометрию: через любые две точки на плоскости можно
+                  провести прямую, и притом только одну. Зачем считать таблицу
+                  из 10 значений, если достаточно найти всего две точки,
+                  отметить их и приложить линейку?
+                </p>
+                <p>
+                  <strong className="font-black text-slate-950">
+                    Важный лайфхак:
+                  </strong>{' '}
+                  чтобы график получился точным, всегда выбирай такие значения
+                  x, чтобы y получался целым числом.
+                </p>
+                <p>
+                  Когда мы изучили формулу{' '}
+                  <strong className="font-black text-slate-950">
+                    y = kx + b
+                  </strong>
+                  , самое время заглянуть в «паспорт» нашей функции и изучить ее
+                  главные математические свойства. Для наглядности продолжим
+                  использовать пример с TikTok-аккаунтом:{' '}
+                  <strong className="font-black text-slate-950">
+                    y = 10x + 50
+                  </strong>
+                  , где x — это дни, а y — подписчики.
+                </p>
+              </div>
             </InfoCard>
             <div className="grid gap-4 md:grid-cols-2">
               <InfoCard title="Область определения D(y)">
-                В формулу y = kx + b можно подставить любое число x. В
-                математике область определения линейной функции — все числа.
+                <div className="grid gap-4">
+                  <p>
+                    <strong className="font-black text-slate-950">
+                      Что это такое простыми словами:
+                    </strong>{' '}
+                    это все значения x, которые мы в принципе имеем право
+                    подставить в формулу.
+                  </p>
+                  <ul className="grid list-disc gap-2 pl-5">
+                    <li>
+                      <strong className="font-black text-slate-950">
+                        В математике:
+                      </strong>{' '}
+                      в формуле{' '}
+                      <strong className="font-black text-slate-950">
+                        y = kx + b
+                      </strong>{' '}
+                      можно умножать коэффициент k на абсолютно любое число.
+                      Никаких запрещенных действий, например деления на ноль,
+                      здесь нет. Поэтому область определения линейной функции —
+                      <strong className="font-black text-slate-950">
+                        {' '}
+                        абсолютно все числа
+                      </strong>
+                      .
+                    </li>
+                    <li>
+                      <strong className="font-black text-slate-950">
+                        Запись:
+                      </strong>{' '}
+                      D(y): все числа.
+                    </li>
+                    <li>
+                      <strong className="font-black text-slate-950">
+                        В реальной жизни:
+                      </strong>{' '}
+                      если x — это дни ведения блога, мы обычно считаем от 0 и
+                      дальше. Но математически можно подставить и x = −3:
+                      получится, что 3 дня назад было 50 + 10 · (−3) = 20
+                      подписчиков.
+                    </li>
+                  </ul>
+                </div>
               </InfoCard>
               <InfoCard title="Множество значений E(y)">
-                Если k ≠ 0, прямая достигает любых значений y. Если k = 0,
-                функция постоянная, например y = 50, и E(y) = {'{50}'}.
+                <div className="grid gap-4">
+                  <p>
+                    <strong className="font-black text-slate-950">
+                      Что это такое простыми словами:
+                    </strong>{' '}
+                    это все результаты y, которые мы можем получить на выходе
+                    после расчетов.
+                  </p>
+                  <ul className="grid list-disc gap-2 pl-5">
+                    <li>
+                      <strong className="font-black text-slate-950">
+                        В математике:
+                      </strong>{' '}
+                      если{' '}
+                      <strong className="font-black text-slate-950">
+                        k ≠ 0
+                      </strong>
+                      , прямая линия бесконечно уходит вверх и вниз, поэтому
+                      способна достичь любой высоты на оси y. Множество значений
+                      линейной функции — тоже{' '}
+                      <strong className="font-black text-slate-950">
+                        любые числа
+                      </strong>
+                      .
+                    </li>
+                    <li>
+                      <strong className="font-black text-slate-950">
+                        Запись:
+                      </strong>{' '}
+                      E(y): все числа, при k ≠ 0.
+                    </li>
+                    <li>
+                      <strong className="font-black text-slate-950">
+                        Исключение:
+                      </strong>{' '}
+                      если скорость изменений равна нулю, то k = 0 и функция
+                      становится постоянной. Например,{' '}
+                      <strong className="font-black text-slate-950">
+                        y = 50
+                      </strong>
+                      . Тогда множество значений состоит из одного числа:
+                      <strong className="font-black text-slate-950">
+                        {' '}
+                        E(y) = {'{50}'}
+                      </strong>
+                      .
+                    </li>
+                  </ul>
+                </div>
               </InfoCard>
               <InfoCard title="Нули функции">
-                Нуль функции — это точка, где y = 0. Для y = kx + b нужно решить
-                уравнение kx + b = 0, то есть x = −b / k.
+                <div className="grid gap-4">
+                  <p>
+                    <strong className="font-black text-slate-950">
+                      Что это такое простыми словами:
+                    </strong>{' '}
+                    это момент, когда процесс «обнуляется». На графике это
+                    точка, где прямая пересекает горизонтальную ось x.
+                  </p>
+                  <ul className="grid list-disc gap-2 pl-5">
+                    <li>
+                      <strong className="font-black text-slate-950">
+                        Главное условие:
+                      </strong>{' '}
+                      в этой точке высота y всегда равна нулю, то есть{' '}
+                      <strong className="font-black text-slate-950">
+                        y = 0
+                      </strong>
+                      .
+                    </li>
+                    <li>
+                      <strong className="font-black text-slate-950">
+                        Как найти математически:
+                      </strong>{' '}
+                      нужно вместо y подставить 0 и решить уравнение{' '}
+                      <strong className="font-black text-slate-950">
+                        kx + b = 0
+                      </strong>
+                      . Отсюда{' '}
+                      <strong className="font-black text-slate-950">
+                        x = −<Fraction numerator="b" denominator="k" />
+                      </strong>
+                      .
+                    </li>
+                    <li>
+                      <strong className="font-black text-slate-950">
+                        Пример из жизни:
+                      </strong>{' '}
+                      на балансе телефона было 300 рублей, и каждый день
+                      списывается по 30 рублей. Формула:{' '}
+                      <strong className="font-black text-slate-950">
+                        y = −30x + 300
+                      </strong>
+                      .
+                    </li>
+                  </ul>
+                  <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4 font-semibold text-slate-900">
+                    <p>−30x + 300 = 0</p>
+                    <p>30x = 300</p>
+                    <p>x = 10 дней</p>
+                  </div>
+                  <p>
+                    <strong className="font-black text-slate-950">
+                      Вывод:
+                    </strong>{' '}
+                    ровно на 10-й день деньги на телефоне закончатся, а точка на
+                    графике будет{' '}
+                    <strong className="font-black text-slate-950">
+                      (10; 0)
+                    </strong>
+                    .
+                  </p>
+                </div>
               </InfoCard>
               <InfoCard title="Знакопостоянство">
-                Если график выше оси x, то y {'>'} 0. Если ниже оси x, то y
-                {' < '}0. Нуль функции разделяет эти промежутки.
+                <div className="grid gap-4">
+                  <p>
+                    <strong className="font-black text-slate-950">
+                      Что это такое простыми словами:
+                    </strong>{' '}
+                    это периоды, когда процесс находится «в плюсе» или «в
+                    минусе».
+                  </p>
+                  <p>
+                    Нуль функции делит весь график на две части — положительную
+                    и отрицательную.
+                  </p>
+                  <ul className="grid list-disc gap-2 pl-5">
+                    <li>
+                      <strong className="font-black text-slate-950">
+                        Функция положительна, y {'>'} 0:
+                      </strong>{' '}
+                      график находится выше оси x.
+                    </li>
+                    <li>
+                      <strong className="font-black text-slate-950">
+                        Функция отрицательна, y {'<'} 0:
+                      </strong>{' '}
+                      график находится ниже оси x.
+                    </li>
+                    <li>
+                      <strong className="font-black text-slate-950">
+                        Пример:
+                      </strong>{' '}
+                      для баланса телефона{' '}
+                      <strong className="font-black text-slate-950">
+                        y = −30x + 300
+                      </strong>{' '}
+                      нуль функции наступает при x = 10.
+                    </li>
+                  </ul>
+                  <div className="grid gap-2 rounded-2xl border border-slate-200 bg-white p-4">
+                    <p>
+                      Если дней прошло{' '}
+                      <strong className="font-black text-slate-950">
+                        меньше 10
+                      </strong>
+                      , баланс положительный: y {'>'} 0.
+                    </p>
+                    <p>
+                      В момент{' '}
+                      <strong className="font-black text-slate-950">
+                        x = 10
+                      </strong>{' '}
+                      наступает нуль функции: баланс равен 0.
+                    </p>
+                    <p>
+                      Если дней прошло{' '}
+                      <strong className="font-black text-slate-950">
+                        больше 10
+                      </strong>
+                      , баланс уходит в минус: y {'<'} 0.
+                    </p>
+                  </div>
+                </div>
               </InfoCard>
             </div>
             <SingleChoiceQuiz
@@ -431,6 +881,36 @@ export function LinearFunctionLessonPage() {
 
         <Section title="Тренажер 2: построй прямую по двум точкам">
           <GraphTrainer />
+        </Section>
+
+        <Section title="Тренажер 3: поймай точку">
+          <PointCatchTrainer />
+        </Section>
+
+        <Section title="Тренажер 4: параллельные прямые">
+          <ParallelLinesTrainer />
+        </Section>
+
+        <Section title="Дополнительные упражнения">
+          <div className="grid gap-5">
+            <p className="text-lg text-slate-700">
+              Если ты справился со всеми заданиями, можешь выполнить
+              дополнительные упражнения и закрепить полученные знания.
+            </p>
+            <div className="grid gap-3 md:grid-cols-3">
+              {additionalExercises.map((exercise, index) => (
+                <a
+                  key={exercise.href}
+                  className="rounded-3xl border border-blue-100 bg-blue-50 p-5 font-black text-blue-800 transition hover:-translate-y-1 hover:border-blue-300 hover:bg-blue-100 focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-blue-100"
+                  href={exercise.href}
+                  rel="noreferrer"
+                  target="_blank"
+                >
+                  Упражнение {index + 1}
+                </a>
+              ))}
+            </div>
+          </div>
         </Section>
       </div>
     </main>
@@ -475,6 +955,23 @@ function InlineFormula({ children }: { readonly children: ReactNode }) {
   )
 }
 
+function Fraction({
+  denominator,
+  numerator,
+}: {
+  readonly denominator: ReactNode
+  readonly numerator: ReactNode
+}) {
+  return (
+    <span className="mx-0.5 inline-grid translate-y-[0.18em] grid-rows-[auto_auto] place-items-center align-middle leading-none">
+      <span className="border-b border-current px-1 pb-0.5 text-[0.82em]">
+        {numerator}
+      </span>
+      <span className="px-1 pt-0.5 text-[0.82em]">{denominator}</span>
+    </span>
+  )
+}
+
 function InfoCard({
   children,
   title,
@@ -485,30 +982,20 @@ function InfoCard({
   return (
     <article className="grid gap-2 rounded-3xl border border-slate-200 bg-slate-50 p-5">
       <h3 className="text-lg font-black text-slate-950">{title}</h3>
-      <p className="text-slate-700">{children}</p>
+      <div className="text-slate-700">{children}</div>
     </article>
   )
 }
 
 function SingleChoiceQuiz({
-  alertMessage,
   options,
   title,
 }: {
-  readonly alertMessage?: string
   readonly options: readonly QuizOption[]
   readonly title: string
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const selectedOption = options.find((option) => option.id === selectedId)
-
-  function handleSelect(option: QuizOption) {
-    setSelectedId(option.id)
-
-    if (option.isCorrect && alertMessage) {
-      window.alert(alertMessage)
-    }
-  }
 
   return (
     <article className="grid gap-4 rounded-3xl border border-slate-200 bg-slate-50 p-5">
@@ -531,7 +1018,7 @@ function SingleChoiceQuiz({
                 !isSelected && 'border-slate-200 text-slate-800',
               )}
               type="button"
-              onClick={() => handleSelect(option)}
+              onClick={() => setSelectedId(option.id)}
             >
               {option.label}
             </button>
@@ -557,11 +1044,10 @@ function MultiSelectQuiz({
   readonly title: string
 }) {
   const [selectedIds, setSelectedIds] = useState<readonly string[]>([])
-  const selectedOptions = options.filter((option) =>
-    selectedIds.includes(option.id),
-  )
+  const [isChecked, setIsChecked] = useState(false)
 
   function toggleOption(optionId: string) {
+    setIsChecked(false)
     setSelectedIds((currentIds) =>
       currentIds.includes(optionId)
         ? currentIds.filter((id) => id !== optionId)
@@ -581,12 +1067,17 @@ function MultiSelectQuiz({
               key={option.id}
               className={classNames(
                 'rounded-2xl border px-4 py-3 text-left font-semibold transition hover:border-blue-300 focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-blue-100',
-                isSelected &&
+                isChecked &&
+                  isSelected &&
                   option.isCorrect &&
                   'border-emerald-300 bg-emerald-50 text-emerald-800',
-                isSelected &&
+                isChecked &&
+                  isSelected &&
                   !option.isCorrect &&
                   'border-red-300 bg-red-50 text-red-800',
+                isSelected &&
+                  !isChecked &&
+                  'border-blue-300 bg-blue-50 text-blue-800',
                 !isSelected && 'border-slate-200 bg-white text-slate-800',
               )}
               type="button"
@@ -597,73 +1088,334 @@ function MultiSelectQuiz({
           )
         })}
       </div>
-      {selectedOptions.length > 0 ? (
-        <div className="grid gap-2">
-          {selectedOptions.map((option) => (
-            <Feedback key={option.id} isCorrect={option.isCorrect}>
-              {option.explanation}
-            </Feedback>
-          ))}
-        </div>
+      <Button
+        className="w-fit"
+        disabled={selectedIds.length === 0}
+        onClick={() => setIsChecked(true)}
+      >
+        Проверить
+      </Button>
+    </article>
+  )
+}
+
+function FunctionSortingExercise() {
+  const [locations, setLocations] = useState<Record<string, SortingLocation>>(
+    () =>
+      sortingOptions.reduce<Record<string, SortingLocation>>(
+        (currentLocations, option) => ({
+          ...currentLocations,
+          [option.id]: 'pool',
+        }),
+        {},
+      ),
+  )
+  const [isChecked, setIsChecked] = useState(false)
+
+  function moveCard(optionId: string, location: SortingLocation) {
+    setIsChecked(false)
+    setLocations((currentLocations) => ({
+      ...currentLocations,
+      [optionId]: location,
+    }))
+  }
+
+  function handleDragStart(event: DragEvent<HTMLElement>, optionId: string) {
+    event.dataTransfer.setData('text/plain', optionId)
+    event.dataTransfer.effectAllowed = 'move'
+  }
+
+  function handleDrop(
+    event: DragEvent<HTMLElement>,
+    location: SortingLocation,
+  ) {
+    event.preventDefault()
+
+    const optionId = event.dataTransfer.getData('text/plain')
+    const hasOption = sortingOptions.some((option) => option.id === optionId)
+
+    if (hasOption) {
+      moveCard(optionId, location)
+    }
+  }
+
+  function getOptionsByLocation(location: SortingLocation) {
+    return sortingOptions.filter((option) => locations[option.id] === location)
+  }
+
+  return (
+    <article className="grid gap-5 rounded-3xl border border-slate-200 bg-slate-50 p-5">
+      <div className="grid gap-2">
+        <h3 className="text-xl font-black text-slate-950">
+          Отсортируй функции
+        </h3>
+        <p className="text-slate-700">
+          Перетащи каждую функцию в одну из колонок: линейные функции или другие
+          функции.
+        </p>
+      </div>
+
+      <SortingDropZone
+        isChecked={isChecked}
+        location="pool"
+        options={getOptionsByLocation('pool')}
+        onDrop={handleDrop}
+        onDragStart={handleDragStart}
+      />
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <SortingDropZone
+          isChecked={isChecked}
+          location="linear"
+          options={getOptionsByLocation('linear')}
+          title="Линейные функции"
+          onDrop={handleDrop}
+          onDragStart={handleDragStart}
+        />
+        <SortingDropZone
+          isChecked={isChecked}
+          location="other"
+          options={getOptionsByLocation('other')}
+          title="Другие функции"
+          onDrop={handleDrop}
+          onDragStart={handleDragStart}
+        />
+      </div>
+
+      <Button
+        className="w-fit"
+        disabled={Object.values(locations).some(
+          (location) => location === 'pool',
+        )}
+        onClick={() => setIsChecked(true)}
+      >
+        Проверить
+      </Button>
+    </article>
+  )
+}
+
+function SortingDropZone({
+  isChecked,
+  location,
+  onDragStart,
+  onDrop,
+  options,
+  title,
+}: {
+  readonly isChecked: boolean
+  readonly location: SortingLocation
+  readonly onDragStart: (
+    event: DragEvent<HTMLElement>,
+    optionId: string,
+  ) => void
+  readonly onDrop: (
+    event: DragEvent<HTMLElement>,
+    location: SortingLocation,
+  ) => void
+  readonly options: readonly QuizOption[]
+  readonly title?: string
+}) {
+  return (
+    <section
+      className={classNames(
+        'grid min-h-36 content-start gap-3 rounded-3xl border-2 border-dashed bg-white p-4 transition',
+        location === 'pool' ? 'border-slate-200' : 'border-blue-200',
+      )}
+      onDragOver={(event) => event.preventDefault()}
+      onDrop={(event) => onDrop(event, location)}
+    >
+      {title ? (
+        <h4 className="rounded-2xl bg-blue-50 px-4 py-3 text-base font-black text-blue-800">
+          {title}
+        </h4>
       ) : null}
+      <div className="grid gap-2">
+        {options.length > 0 ? (
+          options.map((option) => (
+            <SortingFunctionCard
+              key={option.id}
+              isChecked={isChecked}
+              location={location}
+              option={option}
+              onDragStart={onDragStart}
+            />
+          ))
+        ) : (
+          <p className="rounded-2xl bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-500">
+            Перетащи сюда функции
+          </p>
+        )}
+      </div>
+    </section>
+  )
+}
+
+function SortingFunctionCard({
+  isChecked,
+  location,
+  onDragStart,
+  option,
+}: {
+  readonly isChecked: boolean
+  readonly location: SortingLocation
+  readonly onDragStart: (
+    event: DragEvent<HTMLElement>,
+    optionId: string,
+  ) => void
+  readonly option: QuizOption
+}) {
+  const isPlaced = location !== 'pool'
+  const isCorrectLocation =
+    (option.isCorrect && location === 'linear') ||
+    (!option.isCorrect && location === 'other')
+
+  return (
+    <article
+      className={classNames(
+        'cursor-grab rounded-2xl border px-4 py-3 font-semibold text-slate-900 shadow-sm transition active:cursor-grabbing',
+        isChecked &&
+          isPlaced &&
+          isCorrectLocation &&
+          'border-emerald-300 bg-emerald-50 text-emerald-800',
+        isChecked &&
+          isPlaced &&
+          !isCorrectLocation &&
+          'border-red-300 bg-red-50 text-red-800',
+        (!isChecked || !isPlaced) && 'border-slate-200 bg-white',
+      )}
+      draggable
+      onDragStart={(event) => onDragStart(event, option.id)}
+    >
+      {option.label}
     </article>
   )
 }
 
 function MatchingExercise() {
   const [answers, setAnswers] = useState<Record<string, string>>({})
+  const [isChecked, setIsChecked] = useState(false)
+
+  function assignAnswer(situationId: string, choiceId: string) {
+    setIsChecked(false)
+    setAnswers((currentAnswers) => {
+      const nextAnswers = Object.fromEntries(
+        Object.entries(currentAnswers).filter(
+          ([currentSituationId, currentChoiceId]) =>
+            currentSituationId === situationId || currentChoiceId !== choiceId,
+        ),
+      )
+
+      return {
+        ...nextAnswers,
+        [situationId]: choiceId,
+      }
+    })
+  }
+
+  function handleAnswerDragStart(
+    event: DragEvent<HTMLElement>,
+    choiceId: string,
+  ) {
+    event.dataTransfer.setData('text/plain', choiceId)
+    event.dataTransfer.effectAllowed = 'move'
+  }
+
+  function handleSituationDrop(
+    event: DragEvent<HTMLElement>,
+    situationId: string,
+  ) {
+    event.preventDefault()
+
+    const choiceId = event.dataTransfer.getData('text/plain')
+    const hasChoice = matchingChoices.some((choice) => choice.id === choiceId)
+
+    if (hasChoice) {
+      assignAnswer(situationId, choiceId)
+    }
+  }
 
   return (
     <article className="grid gap-4 rounded-3xl border border-slate-200 bg-slate-50 p-5">
       <h3 className="text-xl font-black text-slate-950">
         Задание: соотнеси ситуацию и коэффициент k
       </h3>
+
+      <div className="grid gap-3 rounded-2xl border border-slate-200 bg-white p-4">
+        <h4 className="font-black text-slate-950">Варианты ответов</h4>
+        <div className="grid gap-2 md:grid-cols-3">
+          {matchingChoices.map((choice) => (
+            <article
+              key={choice.id}
+              className="cursor-grab rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-blue-300 active:cursor-grabbing"
+              draggable
+              onDragStart={(event) => handleAnswerDragStart(event, choice.id)}
+            >
+              {choice.label}
+            </article>
+          ))}
+        </div>
+      </div>
+
       <div className="grid gap-4">
         {matchingSituations.map((situation) => {
           const selectedId = answers[situation.id]
+          const selectedChoice = matchingChoices.find(
+            (choice) => choice.id === selectedId,
+          )
           const isCorrect = selectedId === situation.correctChoiceId
 
           return (
-            <div
+            <section
               key={situation.id}
-              className="grid gap-3 rounded-2xl border border-slate-200 bg-white p-4"
+              className="grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 md:grid-cols-[1fr_minmax(260px,420px)] md:items-center"
             >
               <p className="font-semibold text-slate-900">{situation.text}</p>
-              <div className="grid gap-2 md:grid-cols-3">
-                {matchingChoices.map((choice) => {
-                  const isSelected = selectedId === choice.id
-
-                  return (
-                    <button
-                      key={choice.id}
-                      className={classNames(
-                        'rounded-2xl border px-3 py-3 text-left text-sm font-semibold transition hover:border-blue-300 focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-blue-100',
-                        isSelected &&
-                          isCorrect &&
-                          'border-emerald-300 bg-emerald-50 text-emerald-800',
-                        isSelected &&
-                          !isCorrect &&
-                          'border-red-300 bg-red-50 text-red-800',
-                        !isSelected &&
-                          'border-slate-200 bg-slate-50 text-slate-700',
-                      )}
-                      type="button"
-                      onClick={() =>
-                        setAnswers((currentAnswers) => ({
-                          ...currentAnswers,
-                          [situation.id]: choice.id,
-                        }))
-                      }
-                    >
-                      {choice.label}
-                    </button>
-                  )
-                })}
+              <div
+                className={classNames(
+                  'grid min-h-20 place-items-center rounded-2xl border-2 border-dashed px-4 py-3 text-sm font-semibold transition',
+                  isChecked &&
+                    selectedChoice &&
+                    isCorrect &&
+                    'border-emerald-300 bg-emerald-50 text-emerald-800',
+                  isChecked &&
+                    selectedChoice &&
+                    !isCorrect &&
+                    'border-red-300 bg-red-50 text-red-800',
+                  (!isChecked || !selectedChoice) &&
+                    'border-blue-200 bg-blue-50/40 text-slate-500',
+                )}
+                onDragOver={(event) => event.preventDefault()}
+                onDrop={(event) => handleSituationDrop(event, situation.id)}
+              >
+                {selectedChoice ? (
+                  <article
+                    className="w-full cursor-grab rounded-2xl border border-current bg-white/70 px-4 py-3 active:cursor-grabbing"
+                    draggable
+                    onDragStart={(event) =>
+                      handleAnswerDragStart(event, selectedChoice.id)
+                    }
+                  >
+                    {selectedChoice.label}
+                  </article>
+                ) : (
+                  'Перетащи сюда один ответ'
+                )}
               </div>
-            </div>
+            </section>
           )
         })}
       </div>
+
+      <Button
+        className="w-fit"
+        disabled={matchingSituations.some(
+          (situation) => answers[situation.id] === undefined,
+        )}
+        onClick={() => setIsChecked(true)}
+      >
+        Проверить
+      </Button>
     </article>
   )
 }
@@ -736,7 +1488,9 @@ function TrueFalseQuiz() {
 
 function BCoefficientExercise() {
   const [answers, setAnswers] = useState<Record<string, string>>({})
-  const [isChecked, setIsChecked] = useState(false)
+  const [checkedAnswers, setCheckedAnswers] = useState<Record<string, boolean>>(
+    {},
+  )
 
   function normalize(value: string) {
     return value.replaceAll(' ', '').replaceAll('−', '-').toLowerCase()
@@ -759,6 +1513,7 @@ function BCoefficientExercise() {
       <div className="grid gap-3">
         {bCoefficientTasks.map((task) => {
           const isCorrect = isAnswerCorrect(task)
+          const isChecked = checkedAnswers[task.id] === true
 
           return (
             <label key={task.id} className="grid gap-2">
@@ -772,15 +1527,31 @@ function BCoefficientExercise() {
                   isChecked && !isCorrect && 'border-red-300 bg-red-50',
                   !isChecked && 'border-slate-200',
                 )}
-                placeholder="Например: b = 12, (0; 12)"
+                placeholder="Например: b = 1, (0; 1)"
                 value={answers[task.id] ?? ''}
-                onChange={(event) =>
+                onChange={(event) => {
+                  setCheckedAnswers((currentCheckedAnswers) => ({
+                    ...currentCheckedAnswers,
+                    [task.id]: false,
+                  }))
                   setAnswers((currentAnswers) => ({
                     ...currentAnswers,
                     [task.id]: event.target.value,
                   }))
-                }
+                }}
               />
+              <Button
+                className="w-fit"
+                disabled={!answers[task.id]?.trim()}
+                onClick={() =>
+                  setCheckedAnswers((currentCheckedAnswers) => ({
+                    ...currentCheckedAnswers,
+                    [task.id]: true,
+                  }))
+                }
+              >
+                Проверить
+              </Button>
               {isChecked ? (
                 <span
                   className={classNames(
@@ -795,9 +1566,6 @@ function BCoefficientExercise() {
           )
         })}
       </div>
-      <Button className="w-fit" onClick={() => setIsChecked(true)}>
-        Проверить
-      </Button>
     </article>
   )
 }
@@ -818,8 +1586,8 @@ function SliderTrainer() {
           </p>
         </FormulaCard>
         <div className="rounded-3xl border border-blue-100 bg-blue-50 p-5 text-slate-800">
-          {explanation.map((line) => (
-            <p key={line}>{line}</p>
+          {explanation.map((line, index) => (
+            <p key={index}>{line}</p>
           ))}
         </div>
       </div>
@@ -907,8 +1675,11 @@ function GraphTrainer() {
           Построй график функции: {task.formula}
         </p>
         <p className="text-slate-700">
-          Кликни по сетке и поставь две точки с целыми координатами. Затем нажми
-          «Проверить».
+          Кликни по сетке и поставь две точки{' '}
+          <strong className="font-black text-slate-950">
+            с целыми координатами
+          </strong>
+          . Затем нажми «Проверить».
         </p>
         <div className="rounded-2xl bg-white p-4 font-semibold text-slate-800">
           Выбранные точки:{' '}
@@ -946,6 +1717,402 @@ function GraphTrainer() {
         onPointClick={handlePoint}
       />
     </div>
+  )
+}
+
+function PointCatchTrainer() {
+  const [taskIndex, setTaskIndex] = useState(0)
+  const [selectedPointIds, setSelectedPointIds] = useState<readonly string[]>(
+    [],
+  )
+  const [isChecked, setIsChecked] = useState(false)
+  const task = pointCatchTasks[taskIndex]
+  const correctPointIds = task.points
+    .filter((point) => point.isCorrect)
+    .map((point) => point.id)
+  const isSuccess =
+    selectedPointIds.length === correctPointIds.length &&
+    selectedPointIds.every((pointId) => correctPointIds.includes(pointId))
+
+  function togglePoint(pointId: string) {
+    setIsChecked(false)
+    setSelectedPointIds((currentPointIds) =>
+      currentPointIds.includes(pointId)
+        ? currentPointIds.filter((currentPointId) => currentPointId !== pointId)
+        : [...currentPointIds, pointId],
+    )
+  }
+
+  function nextTask() {
+    setTaskIndex((currentIndex) => (currentIndex + 1) % pointCatchTasks.length)
+    setSelectedPointIds([])
+    setIsChecked(false)
+  }
+
+  return (
+    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(320px,440px)]">
+      <div className="grid gap-5 rounded-3xl border border-slate-200 bg-slate-50 p-5">
+        <div className="grid gap-2">
+          <p className="text-lg font-black text-slate-950">
+            Найди точки для функции: {task.formula}
+          </p>
+          <p className="text-slate-700">
+            Отметь все точки, через которые проходит график данной функции. В
+            случае успеха на экране появится прямая.
+          </p>
+        </div>
+
+        <div className="rounded-2xl bg-white p-4 font-semibold text-slate-800">
+          Выбранные точки:{' '}
+          {selectedPointIds.length > 0
+            ? task.points
+                .filter((point) => selectedPointIds.includes(point.id))
+                .map((point) => point.label)
+                .join(', ')
+            : 'пока нет'}
+        </div>
+
+        <div className="flex flex-wrap gap-3">
+          <Button onClick={() => setIsChecked(true)}>Проверить</Button>
+          <Button
+            variant="secondary"
+            onClick={() => {
+              setSelectedPointIds([])
+              setIsChecked(false)
+            }}
+          >
+            Сбросить выбор
+          </Button>
+          <Button variant="secondary" onClick={nextTask}>
+            Следующая функция
+          </Button>
+        </div>
+
+        {isChecked ? (
+          <Feedback isCorrect={isSuccess}>
+            {isSuccess
+              ? 'Верно! Все отмеченные точки лежат на графике, поэтому прямая появилась.'
+              : 'Пока неверно. Отметь все правильные точки и убери лишние.'}
+          </Feedback>
+        ) : null}
+      </div>
+
+      <PointCatchGraph
+        isChecked={isChecked}
+        isSuccess={isChecked && isSuccess}
+        points={task.points}
+        selectedPointIds={selectedPointIds}
+        task={task}
+        onPointClick={togglePoint}
+      />
+    </div>
+  )
+}
+
+function PointCatchGraph({
+  isChecked,
+  isSuccess,
+  onPointClick,
+  points,
+  selectedPointIds,
+  task,
+}: {
+  readonly isChecked: boolean
+  readonly isSuccess: boolean
+  readonly onPointClick: (pointId: string) => void
+  readonly points: readonly CatchPoint[]
+  readonly selectedPointIds: readonly string[]
+  readonly task: PointCatchTask
+}) {
+  const start = mapPoint({ x: -axisRange, y: task.k * -axisRange + task.b })
+  const end = mapPoint({ x: axisRange, y: task.k * axisRange + task.b })
+
+  return (
+    <GraphShell>
+      <GraphGrid />
+      {isSuccess ? (
+        <line
+          className="stroke-emerald-600"
+          strokeLinecap="round"
+          strokeWidth={4}
+          x1={start.x}
+          x2={end.x}
+          y1={start.y}
+          y2={end.y}
+        />
+      ) : null}
+      {points.map((point) => {
+        const mappedPoint = mapPoint(point)
+        const isSelected = selectedPointIds.includes(point.id)
+        const pointColor =
+          isChecked && isSelected && point.isCorrect
+            ? 'fill-emerald-500 stroke-emerald-100'
+            : isChecked && isSelected && !point.isCorrect
+              ? 'fill-red-500 stroke-red-100'
+              : isSelected
+                ? 'fill-blue-600 stroke-blue-100'
+                : 'fill-white stroke-blue-500'
+
+        return (
+          <g
+            key={point.id}
+            className="cursor-pointer"
+            role="button"
+            tabIndex={0}
+            onClick={() => onPointClick(point.id)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault()
+                onPointClick(point.id)
+              }
+            }}
+          >
+            <circle
+              className={pointColor}
+              cx={mappedPoint.x}
+              cy={mappedPoint.y}
+              r={10}
+              strokeWidth={4}
+            />
+            <text
+              className={classNames(
+                'pointer-events-none text-xs font-black',
+                isSelected ? 'fill-white' : 'fill-blue-700',
+              )}
+              textAnchor="middle"
+              x={mappedPoint.x}
+              y={mappedPoint.y + 4}
+            >
+              {point.label}
+            </text>
+            <text
+              className="pointer-events-none fill-slate-500 text-[10px] font-semibold"
+              textAnchor="middle"
+              x={mappedPoint.x}
+              y={mappedPoint.y - 14}
+            >
+              ({point.x}; {point.y})
+            </text>
+          </g>
+        )
+      })}
+    </GraphShell>
+  )
+}
+
+function ParallelLinesTrainer() {
+  const [taskIndex, setTaskIndex] = useState(0)
+  const task = parallelLinesTasks[taskIndex]
+  const [studentK, setStudentK] = useState(task.initialK)
+  const [studentB, setStudentB] = useState(task.initialB)
+  const [isChecked, setIsChecked] = useState(false)
+  const isParallel = studentK === task.fixedK
+  const passesThroughPoint =
+    studentK * task.targetPoint.x + studentB === task.targetPoint.y
+  const isCorrect = isParallel && passesThroughPoint
+
+  function nextTask() {
+    const nextIndex = (taskIndex + 1) % parallelLinesTasks.length
+    const nextTaskValue = parallelLinesTasks[nextIndex]
+
+    setTaskIndex(nextIndex)
+    setStudentK(nextTaskValue.initialK)
+    setStudentB(nextTaskValue.initialB)
+    setIsChecked(false)
+  }
+
+  function updateStudentK(value: number) {
+    setStudentK(value)
+    setIsChecked(false)
+  }
+
+  function updateStudentB(value: number) {
+    setStudentB(value)
+    setIsChecked(false)
+  }
+
+  return (
+    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(320px,440px)]">
+      <div className="grid gap-5 rounded-3xl border border-slate-200 bg-slate-50 p-5">
+        <div className="grid gap-2">
+          <p className="text-lg font-black text-slate-950">
+            Неподвижная прямая: {formatLinearFunction(task.fixedK, task.fixedB)}
+          </p>
+          <p className="text-slate-700">
+            Измени числовые коэффициенты во второй прямой так, чтобы она была
+            параллельна первой и прошла через точку{' '}
+            <strong className="font-black text-slate-950">
+              ({task.targetPoint.x}; {task.targetPoint.y})
+            </strong>
+            .
+          </p>
+        </div>
+
+        <FormulaCard>
+          <p className="text-xl font-black text-slate-950">
+            Твоя прямая: {formatLinearFunction(studentK, studentB)}
+          </p>
+        </FormulaCard>
+
+        <div className="grid gap-4 md:grid-cols-2">
+          <NumberControl
+            label="k"
+            max={6}
+            min={-6}
+            step={0.5}
+            value={studentK}
+            onChange={updateStudentK}
+          />
+          <NumberControl
+            label="b"
+            max={10}
+            min={-10}
+            step={1}
+            value={studentB}
+            onChange={updateStudentB}
+          />
+        </div>
+
+        <div className="flex flex-wrap gap-3">
+          <Button onClick={() => setIsChecked(true)}>Проверить</Button>
+          <Button variant="secondary" onClick={nextTask}>
+            Следующая пара
+          </Button>
+        </div>
+
+        {isChecked ? (
+          <Feedback isCorrect={isCorrect}>
+            {isCorrect
+              ? 'Верно! Коэффициенты k равны, а твоя прямая проходит через заданную точку.'
+              : 'Пока неверно. Для параллельности нужен такой же k, а b должен привести прямую в заданную точку.'}
+          </Feedback>
+        ) : null}
+      </div>
+
+      <ParallelLinesGraph
+        fixedB={task.fixedB}
+        fixedK={task.fixedK}
+        isCorrect={isChecked && isCorrect}
+        studentB={studentB}
+        studentK={studentK}
+        targetPoint={task.targetPoint}
+      />
+    </div>
+  )
+}
+
+function NumberControl({
+  label,
+  max,
+  min,
+  onChange,
+  step,
+  value,
+}: {
+  readonly label: string
+  readonly max: number
+  readonly min: number
+  readonly onChange: (value: number) => void
+  readonly step: number
+  readonly value: number
+}) {
+  return (
+    <label className="grid gap-2">
+      <span className="flex items-center justify-between font-black text-slate-950">
+        <span>{label}</span>
+        <span className="rounded-full bg-white px-3 py-1 text-blue-700">
+          {formatSignedNumberNode(value)}
+        </span>
+      </span>
+      <input
+        className="accent-blue-600"
+        max={max}
+        min={min}
+        step={step}
+        type="range"
+        value={value}
+        onChange={(event) => onChange(Number(event.target.value))}
+      />
+      <input
+        className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-950 transition outline-none focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
+        max={max}
+        min={min}
+        step={step}
+        type="number"
+        value={value}
+        onChange={(event) => onChange(Number(event.target.value))}
+      />
+    </label>
+  )
+}
+
+function ParallelLinesGraph({
+  fixedB,
+  fixedK,
+  isCorrect,
+  studentB,
+  studentK,
+  targetPoint,
+}: {
+  readonly fixedB: number
+  readonly fixedK: number
+  readonly isCorrect: boolean
+  readonly studentB: number
+  readonly studentK: number
+  readonly targetPoint: Point
+}) {
+  const fixedStart = mapPoint({
+    x: -axisRange,
+    y: fixedK * -axisRange + fixedB,
+  })
+  const fixedEnd = mapPoint({ x: axisRange, y: fixedK * axisRange + fixedB })
+  const studentStart = mapPoint({
+    x: -axisRange,
+    y: studentK * -axisRange + studentB,
+  })
+  const studentEnd = mapPoint({
+    x: axisRange,
+    y: studentK * axisRange + studentB,
+  })
+  const mappedTargetPoint = mapPoint(targetPoint)
+
+  return (
+    <GraphShell>
+      <GraphGrid />
+      <line
+        className="stroke-blue-600"
+        strokeLinecap="round"
+        strokeWidth={4}
+        x1={fixedStart.x}
+        x2={fixedEnd.x}
+        y1={fixedStart.y}
+        y2={fixedEnd.y}
+      />
+      <line
+        className={isCorrect ? 'stroke-emerald-600' : 'stroke-orange-500'}
+        strokeDasharray={isCorrect ? undefined : '8 8'}
+        strokeLinecap="round"
+        strokeWidth={4}
+        x1={studentStart.x}
+        x2={studentEnd.x}
+        y1={studentStart.y}
+        y2={studentEnd.y}
+      />
+      <circle
+        className="fill-red-500 stroke-white"
+        cx={mappedTargetPoint.x}
+        cy={mappedTargetPoint.y}
+        r={8}
+        strokeWidth={3}
+      />
+      <text
+        className="fill-red-700 text-xs font-black"
+        x={mappedTargetPoint.x + 10}
+        y={mappedTargetPoint.y - 10}
+      >
+        ({targetPoint.x}; {targetPoint.y})
+      </text>
+    </GraphShell>
   )
 }
 
@@ -1095,7 +2262,7 @@ function GraphGrid() {
         className="stroke-slate-400"
         strokeWidth={2}
         x1={0}
-        x2={graphSize}
+        x2={graphSize - 12}
         y1={graphCenter}
         y2={graphCenter}
       />
@@ -1104,11 +2271,25 @@ function GraphGrid() {
         strokeWidth={2}
         x1={graphCenter}
         x2={graphCenter}
-        y1={0}
+        y1={12}
         y2={graphSize}
       />
+      <polygon
+        className="fill-slate-400"
+        points={`${graphSize - 4},${graphCenter} ${graphSize - 18},${graphCenter - 7} ${graphSize - 18},${graphCenter + 7}`}
+      />
+      <polygon
+        className="fill-slate-400"
+        points={`${graphCenter},4 ${graphCenter - 7},18 ${graphCenter + 7},18`}
+      />
       {coordinates
-        .filter((coordinate) => coordinate !== 0 && coordinate % 2 === 0)
+        .filter(
+          (coordinate) =>
+            coordinate !== 0 &&
+            coordinate !== -axisRange &&
+            coordinate !== axisRange &&
+            coordinate % 2 === 0,
+        )
         .map((coordinate) => {
           const xPosition = graphCenter + coordinate * gridStep
           const yPosition = graphCenter - coordinate * gridStep
@@ -1127,6 +2308,13 @@ function GraphGrid() {
             </g>
           )
         })}
+      <text
+        className="fill-slate-500 text-xs font-bold"
+        x={graphCenter + 6}
+        y={graphCenter + 15}
+      >
+        0
+      </text>
       <text
         className="fill-slate-500 text-xs font-bold"
         x={graphSize - 14}
@@ -1195,7 +2383,7 @@ function Feedback({
   )
 }
 
-function buildSliderExplanation(k: number, b: number) {
+function buildSliderExplanation(k: number, b: number): readonly ReactNode[] {
   const direction =
     k > 0
       ? 'Прямая растет (идет снизу вверх). Процесс увеличивается.'
@@ -1213,28 +2401,77 @@ function buildSliderExplanation(k: number, b: number) {
           : 'График имеет умеренный наклон.'
 
   const start =
-    b > 0
-      ? `График пересекает ось y выше начала координат в точке (0; ${b}).`
-      : b < 0
-        ? `График пересекает ось y ниже начала координат в точке (0; ${b}).`
-        : 'График проходит ровно через центр (0; 0). Это прямая пропорциональность.'
+    b > 0 ? (
+      <>
+        График пересекает ось y выше начала координат в точке (0;{' '}
+        {formatSignedNumberNode(b)}).
+      </>
+    ) : b < 0 ? (
+      <>
+        График пересекает ось y ниже начала координат в точке (0;{' '}
+        {formatSignedNumberNode(b)}).
+      </>
+    ) : (
+      'График проходит ровно через центр (0; 0). Это прямая пропорциональность.'
+    )
 
   return [direction, speed, start]
 }
 
 function formatLinearFunction(k: number, b: number) {
-  const kPart =
-    k === 0 ? '' : k === 1 ? 'x' : k === -1 ? '−x' : `${formatNumber(k)}x`
-  const bPart =
-    b === 0
-      ? ''
-      : `${b > 0 && k !== 0 ? ' + ' : b < 0 && k !== 0 ? ' − ' : ''}${formatNumber(Math.abs(b))}`
+  if (k === 0) {
+    return <>y = {formatSignedNumberNode(b)}</>
+  }
 
-  return `y = ${kPart}${bPart || (k === 0 ? formatNumber(b) : '')}`
+  return (
+    <>
+      y = {formatCoefficientNode(k)}
+      {b !== 0 ? (
+        <>
+          {b > 0 ? ' + ' : ' − '}
+          {formatUnsignedNumberNode(Math.abs(b))}
+        </>
+      ) : null}
+    </>
+  )
 }
 
-function formatNumber(value: number) {
-  return Number.isInteger(value) ? String(value) : String(value)
+function formatCoefficientNode(value: number) {
+  if (value === 1) {
+    return 'x'
+  }
+
+  if (value === -1) {
+    return '−x'
+  }
+
+  return (
+    <>
+      {value < 0 ? '−' : ''}
+      {formatUnsignedNumberNode(Math.abs(value))}x
+    </>
+  )
+}
+
+function formatSignedNumberNode(value: number) {
+  return (
+    <>
+      {value < 0 ? '−' : ''}
+      {formatUnsignedNumberNode(Math.abs(value))}
+    </>
+  )
+}
+
+function formatUnsignedNumberNode(value: number) {
+  if (Number.isInteger(value)) {
+    return String(value)
+  }
+
+  if (Number.isInteger(value * 2)) {
+    return <Fraction numerator={String(value * 2)} denominator="2" />
+  }
+
+  return String(value)
 }
 
 function mapPoint(point: Point) {
