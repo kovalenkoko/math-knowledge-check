@@ -6,7 +6,8 @@ const lessons = [
   {
     title: 'Линейная функция',
     description:
-      'Теория, задания и интерактивные тренажеры по формуле y = kx + b.',
+      'Теория, задания и интерактивные тренажеры по формуле',
+    formula: 'y = kx + b',
     href: routes.linearFunctionLesson,
   },
 ] as const
@@ -49,7 +50,11 @@ export function HomePage() {
             <h2 className="text-2xl font-bold text-slate-950 group-hover:text-blue-700">
               {lesson.title}
             </h2>
-            <p className="text-slate-600">{lesson.description}</p>
+            <p className="text-slate-600">
+              {lesson.description}
+              <br />
+              <span className="whitespace-nowrap">{lesson.formula}.</span>
+            </p>
           </Link>
         ))}
       </section>
