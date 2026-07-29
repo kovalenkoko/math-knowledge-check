@@ -3,6 +3,7 @@ import {
   type MouseEvent,
   type ReactNode,
   useMemo,
+  useRef,
   useState,
 } from 'react'
 import { Link } from 'react-router-dom'
@@ -212,20 +213,34 @@ const matchingSituations: readonly MatchingSituation[] = [
 const matchingChoices: readonly MatchingChoice[] = [
   {
     id: 'negative',
-    label: 'k < 0: процесс убывает. Функция: y = −10x + 120',
+    label: (
+      <ChoiceFormulaLabel
+        description="k < 0: процесс убывает. Функция:"
+        formula="y = −10x + 120"
+      />
+    ),
   },
   {
     id: 'positive-fraction',
     label: (
-      <>
-        k &gt; 0 и дробный: медленный рост. Функция: y ={' '}
-        <Fraction numerator="1" denominator="5" />x
-      </>
+      <ChoiceFormulaLabel
+        description="k > 0 и дробный: медленный рост. Функция:"
+        formula={
+          <>
+            y = <Fraction numerator="1" denominator="5" />x
+          </>
+        }
+      />
     ),
   },
   {
     id: 'positive-fast',
-    label: 'k > 0: процесс увеличивается. Функция: y = 50x + 500',
+    label: (
+      <ChoiceFormulaLabel
+        description="k > 0: процесс увеличивается. Функция:"
+        formula="y = 50x + 500"
+      />
+    ),
   },
 ] as const
 
@@ -277,6 +292,59 @@ const bCoefficientTasks = [
     answer: 'b = 100, точка (0; 100)',
   },
 ] as const
+
+const signConstancyTasks = [
+  {
+    id: 'positive-2x-10',
+    prompt: (
+      <>
+        Найдите, при каких значениях x функция{' '}
+        <span className="whitespace-nowrap">y = 2x − 10</span> принимает
+        положительные значения.
+      </>
+    ),
+    expected: ['x>5'],
+    answer: 'x > 5',
+  },
+  {
+    id: 'negative-3x-12',
+    prompt: (
+      <>
+        Найдите, при каких значениях x функция{' '}
+        <span className="whitespace-nowrap">y = 3x + 12</span> принимает
+        отрицательные значения.
+      </>
+    ),
+    expected: ['x<-4'],
+    answer: 'x < −4',
+  },
+  {
+    id: 'non-positive-5x-15',
+    prompt: (
+      <>
+        Найдите, при каких значениях x функция{' '}
+        <span className="whitespace-nowrap">y = 5x − 15</span> принимает
+        неположительные значения.
+      </>
+    ),
+    expected: ['x<=3', 'x≤3'],
+    answer: 'x ≤ 3',
+  },
+  {
+    id: 'non-negative-8-2x',
+    prompt: (
+      <>
+        Найдите, при каких значениях x функция{' '}
+        <span className="whitespace-nowrap">y = 8 − 2x</span> принимает
+        неотрицательные значения.
+      </>
+    ),
+    expected: ['x<=4', 'x≤4'],
+    answer: 'x ≤ 4',
+  },
+] as const
+
+const inequalitySymbols = ['<', '>', '≤', '≥'] as const
 
 const propertiesQuizOptions: readonly QuizOption[] = [
   {
@@ -555,7 +623,7 @@ export function LinearFunctionLessonPage() {
         <Section title="Задания: узнаем линейную функцию">
           <div className="grid gap-5 lg:grid-cols-2">
             <MultiSelectQuiz
-              title="Какая функция НЕ является линейной?"
+              title="Какие функции НЕ являются линейными?"
               options={nonLinearQuizOptions}
             />
             {coefficientQuizzes.map((quiz) => (
@@ -868,6 +936,85 @@ export function LinearFunctionLessonPage() {
                 </div>
               </InfoCard>
             </div>
+            <article className="grid gap-4 rounded-3xl border border-slate-200 bg-slate-50 p-5">
+              <p>
+                Чтобы найти промежутки знакопостоянства функции (то есть
+                интервалы, где функция положительная или отрицательная,
+                неположительная, неотрицательная), нужно решить соответствующее
+                неравенство.
+              </p>
+              <div className="grid gap-3">
+                <h3 className="text-lg font-black text-slate-950">
+                  Основное правило
+                </h3>
+                <ul className="grid list-disc gap-2 pl-5">
+                  <li>
+                    <strong className="font-black text-slate-950">
+                      Положительные значения{' '}
+                      <span className="whitespace-nowrap">(y {'>'} 0)</span>:
+                    </strong>{' '}
+                    нужно составить и решить неравенство{' '}
+                    <span className="whitespace-nowrap">f(x) {'>'} 0</span>.
+                    График в этих точках лежит выше оси Ox.
+                  </li>
+                  <li>
+                    <strong className="font-black text-slate-950">
+                      Отрицательные значения{' '}
+                      <span className="whitespace-nowrap">(y {'<'} 0)</span>:
+                    </strong>{' '}
+                    нужно составить и решить неравенство{' '}
+                    <span className="whitespace-nowrap">f(x) {'<'} 0</span>.
+                    График в этих точках лежит ниже оси Ox.
+                  </li>
+                  <li>
+                    <strong className="font-black text-slate-950">
+                      Неположительные значения{' '}
+                      <span className="whitespace-nowrap">(y ≤ 0)</span>
+                    </strong>{' '}
+                    — подходят все отрицательные значения и ноль: нужно
+                    составить и решить неравенство{' '}
+                    <span className="whitespace-nowrap">f(x) ≤ 0</span>.
+                  </li>
+                  <li>
+                    <strong className="font-black text-slate-950">
+                      Неотрицательные значения{' '}
+                      <span className="whitespace-nowrap">(y ≥ 0)</span>
+                    </strong>{' '}
+                    — подходят все положительные значения и ноль: нужно
+                    составить и решить неравенство{' '}
+                    <span className="whitespace-nowrap">f(x) ≥ 0</span>.
+                  </li>
+                </ul>
+              </div>
+              <div className="grid gap-3 rounded-2xl border border-slate-200 bg-white p-4">
+                <p>
+                  <strong className="font-black text-slate-950">Пример:</strong>{' '}
+                  Найдите, при каких значениях x функция{' '}
+                  <span className="whitespace-nowrap">y = 2x − 8</span> принимает
+                  положительные значения.
+                </p>
+                <ol className="grid list-decimal gap-2 pl-5">
+                  <li>
+                    Составляем неравенство:{' '}
+                    <span className="whitespace-nowrap">2x − 8 {'>'} 0</span>
+                  </li>
+                  <li>
+                    Переносим число:{' '}
+                    <span className="whitespace-nowrap">2x {'>'} 8</span>
+                  </li>
+                  <li>
+                    Делим на 2:{' '}
+                    <span className="whitespace-nowrap">x {'>'} 4</span>
+                  </li>
+                </ol>
+                <p>
+                  <strong className="font-black text-slate-950">Ответ:</strong>{' '}
+                  Функция положительна при{' '}
+                  <span className="whitespace-nowrap">x {'>'} 4</span>.
+                </p>
+              </div>
+            </article>
+            <SignConstancyExercise />
             <SingleChoiceQuiz
               title="Дана функция y = 2x − 6. Какое утверждение НЕ верно?"
               options={propertiesQuizOptions}
@@ -888,7 +1035,10 @@ export function LinearFunctionLessonPage() {
         </Section>
 
         <Section title="Тренажер 4: параллельные прямые">
-          <ParallelLinesTrainer />
+          <div className="grid gap-5">
+            <ParallelLinesTrainer />
+            <ParallelCoefficientQuestion />
+          </div>
         </Section>
 
         <Section title="Дополнительные упражнения">
@@ -944,6 +1094,22 @@ function FormulaCard({ children }: { readonly children: ReactNode }) {
     <div className="grid gap-2 rounded-3xl border border-blue-100 bg-blue-50 p-5 font-semibold text-slate-950">
       {children}
     </div>
+  )
+}
+
+function ChoiceFormulaLabel({
+  description,
+  formula,
+}: {
+  readonly description: ReactNode
+  readonly formula: ReactNode
+}) {
+  return (
+    <>
+      {description}
+      <br />
+      <span className="whitespace-nowrap">{formula}</span>
+    </>
   )
 }
 
@@ -1486,6 +1652,139 @@ function TrueFalseQuiz() {
   )
 }
 
+function SignConstancyExercise() {
+  const [taskIndex, setTaskIndex] = useState(0)
+  const [answer, setAnswer] = useState('')
+  const [isChecked, setIsChecked] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const task = signConstancyTasks[taskIndex]
+  const isCorrect = isSignConstancyAnswerCorrect(answer, task.expected)
+
+  function insertSymbol(symbol: (typeof inequalitySymbols)[number]) {
+    const input = inputRef.current
+    const selectionStart = input?.selectionStart ?? answer.length
+    const selectionEnd = input?.selectionEnd ?? answer.length
+    const nextAnswer =
+      answer.slice(0, selectionStart) + symbol + answer.slice(selectionEnd)
+
+    setIsChecked(false)
+    setAnswer(nextAnswer)
+
+    requestAnimationFrame(() => {
+      const nextPosition = selectionStart + symbol.length
+      input?.focus()
+      input?.setSelectionRange(nextPosition, nextPosition)
+    })
+  }
+
+  function nextTask() {
+    setTaskIndex((currentIndex) => (currentIndex + 1) % signConstancyTasks.length)
+    setAnswer('')
+    setIsChecked(false)
+  }
+
+  return (
+    <article className="grid gap-4 rounded-3xl border border-slate-200 bg-slate-50 p-5">
+      <div className="grid gap-2">
+        <h3 className="text-xl font-black text-slate-950">
+          Задание: промежутки знакопостоянства
+        </h3>
+        <p className="font-semibold text-blue-800">
+          Вычисления выполняй в тетради!
+        </p>
+        <p className="text-slate-700">
+          Задание {taskIndex + 1} из {signConstancyTasks.length}. Введи ответ в
+          виде неравенства, например{' '}
+          <span className="whitespace-nowrap">x {'>'} 4</span>. Знаки можно
+          вставить кнопками.
+        </p>
+      </div>
+
+      <p className="text-lg font-black text-slate-950">{task.prompt}</p>
+
+      <div className="flex flex-wrap gap-2">
+        {inequalitySymbols.map((symbol) => (
+          <button
+            key={symbol}
+            className="min-h-11 min-w-11 rounded-full border border-slate-200 bg-white text-lg font-black text-slate-950 transition hover:border-blue-300 hover:text-blue-700 focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-blue-100"
+            type="button"
+            onClick={() => insertSymbol(symbol)}
+          >
+            {symbol}
+          </button>
+        ))}
+      </div>
+
+      <input
+        ref={inputRef}
+        className={classNames(
+          'rounded-2xl border bg-white px-4 py-3 text-slate-950 transition outline-none focus:border-blue-400 focus:ring-4 focus:ring-blue-100',
+          isChecked && isCorrect && 'border-emerald-300 bg-emerald-50',
+          isChecked && !isCorrect && 'border-red-300 bg-red-50',
+          !isChecked && 'border-slate-200',
+        )}
+        placeholder="Например: x > 8"
+        value={answer}
+        onChange={(event) => {
+          setIsChecked(false)
+          setAnswer(event.target.value)
+        }}
+      />
+
+      <div className="flex flex-wrap gap-3">
+        <Button
+          disabled={!answer.trim()}
+          onClick={() => setIsChecked(true)}
+        >
+          Проверить
+        </Button>
+        <Button
+          variant="secondary"
+          onClick={() => {
+            setAnswer('')
+            setIsChecked(false)
+            inputRef.current?.focus()
+          }}
+        >
+          Сбросить
+        </Button>
+        <Button variant="secondary" onClick={nextTask}>
+          Следующее задание
+        </Button>
+      </div>
+
+      {isChecked ? (
+        <Feedback isCorrect={isCorrect}>
+          {isCorrect
+            ? 'Верно!'
+            : `Пока неверно. Правильный ответ: ${task.answer}.`}
+        </Feedback>
+      ) : null}
+    </article>
+  )
+}
+
+function isSignConstancyAnswerCorrect(
+  value: string,
+  expected: readonly string[],
+) {
+  const normalized = normalizeSignConstancyAnswer(value)
+
+  return expected.some(
+    (variant) => normalizeSignConstancyAnswer(variant) === normalized,
+  )
+}
+
+function normalizeSignConstancyAnswer(value: string) {
+  return value
+    .replaceAll(' ', '')
+    .replaceAll('−', '-')
+    .replaceAll('–', '-')
+    .replaceAll('≤', '<=')
+    .replaceAll('≥', '>=')
+    .toLowerCase()
+}
+
 function BCoefficientExercise() {
   const [answers, setAnswers] = useState<Record<string, string>>({})
   const [checkedAnswers, setCheckedAnswers] = useState<Record<string, boolean>>(
@@ -1999,6 +2298,79 @@ function ParallelLinesTrainer() {
       />
     </div>
   )
+}
+
+function ParallelCoefficientQuestion() {
+  const [answer, setAnswer] = useState('')
+  const [isChecked, setIsChecked] = useState(false)
+  const normalizedAnswer = normalizeCoefficientName(answer)
+  const isCorrect = normalizedAnswer === 'угловойкоэффициент'
+  const needsNameHint = normalizedAnswer === 'k'
+
+  return (
+    <article className="grid gap-4 rounded-3xl border border-slate-200 bg-slate-50 p-5">
+      <div className="grid gap-2">
+        <h3 className="text-xl font-black text-slate-950">
+          Открытый вопрос
+        </h3>
+        <p className="font-semibold text-slate-900">
+          Когда графики параллельны, какие коэффициенты совпадают? (напишите, как
+          называется этот коэффициент)
+        </p>
+      </div>
+
+      <input
+        className={classNames(
+          'rounded-2xl border bg-white px-4 py-3 text-slate-950 transition outline-none focus:border-blue-400 focus:ring-4 focus:ring-blue-100',
+          isChecked && isCorrect && 'border-emerald-300 bg-emerald-50',
+          isChecked &&
+            !isCorrect &&
+            !needsNameHint &&
+            'border-red-300 bg-red-50',
+          isChecked && needsNameHint && 'border-amber-300 bg-amber-50',
+          !isChecked && 'border-slate-200',
+        )}
+        placeholder="Впиши название коэффициента"
+        value={answer}
+        onChange={(event) => {
+          setIsChecked(false)
+          setAnswer(event.target.value)
+        }}
+      />
+
+      <Button
+        className="w-fit"
+        disabled={!answer.trim()}
+        onClick={() => setIsChecked(true)}
+      >
+        Проверить
+      </Button>
+
+      {isChecked && isCorrect ? (
+        <Feedback isCorrect>Верно! Это угловой коэффициент.</Feedback>
+      ) : null}
+
+      {isChecked && needsNameHint ? (
+        <p className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 font-semibold text-amber-900">
+          Ты определил верно, но вспомни как называется этот коэффициент.
+        </p>
+      ) : null}
+
+      {isChecked && !isCorrect && !needsNameHint ? (
+        <Feedback isCorrect={false}>
+          Пока неверно, подумай еще!
+        </Feedback>
+      ) : null}
+    </article>
+  )
+}
+
+function normalizeCoefficientName(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replaceAll('ё', 'е')
+    .replaceAll(/[\s-]+/g, '')
 }
 
 function NumberControl({
